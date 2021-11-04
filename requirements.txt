@@ -1,0 +1,10 @@
+binaryornot
+h5py
+jupytext
+matplotlib
+notebook
+numpy
+pandas
+plotly
+pydantic
+requests

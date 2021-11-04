@@ -1,0 +1,9 @@
+bin
+devenv
+dist
+Dockerfile
+.env
+env
+.git
+.gitignore
+**/__pycache__
