@@ -90,7 +90,7 @@ class Job:
 
         base_url = os.environ.get('JUPYTER_BASE_URL')
 
-        if self.job.get('interactive') and base_url:
+        if self.job.get('is_interactive') and base_url:
             script = f"jupyter notebook --allow-root --no-browser --ip='*' --NotebookApp.base_url={base_url} --NotebookApp.token=''"
         else:
             script = self.job['node']['script'] or "echo 'Empty script: nothing to do :('\nexit 1"
