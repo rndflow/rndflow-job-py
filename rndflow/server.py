@@ -16,7 +16,7 @@ from requests.packages.urllib3.util.retry import Retry
 urllib3.disable_warnings()
 ssl._create_default_https_context = ssl._create_unverified_context
 
-from .config import get_settings
+from .config import Settings
 
 #---------------------------------------------------------------------------
 def timestamp():
@@ -47,7 +47,7 @@ def file_hash(path):
 #---------------------------------------------------------------------------
 class Server:
     def __init__(self, api_server=None, api_key=None):
-        cfg = get_settings()
+        cfg = Settings()
 
         if api_server is None:
             api_server = cfg.rndflow_api_server
