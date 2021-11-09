@@ -2,6 +2,7 @@ The MIT License
 ===============
 
 Copyright (c) 2021 Denis Demidov <dennis.demidov@gmail.com>
+
 Copyright (c) 2021 Marat Galimov <glmvmrt@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
