@@ -4,6 +4,7 @@ setup(
         name='rndflow',
         author='D Demidov, M Galimov',
         author_email='mail@rndflow.com',
+        license='MIT',
         version='0.1.0',
         description='Support module for RnDflow jobs',
         include_package_data=True,
