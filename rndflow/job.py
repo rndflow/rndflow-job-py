@@ -10,9 +10,10 @@ package_index = 0
 
 #---------------------------------------------------------------------------
 def secret(name, required=False):
-    value = os.environ.get(name)
+    vname = f'RNDFLOW_SECRET_{name.upper()}'
+    value = os.environ.get(vname)
     if required and value is None:
-        raise Exception(f'The required project secret "{name}" is not set')
+        raise Exception(f'The required environment variable "{vname}" is not set')
     return value
 
 #---------------------------------------------------------------------------
