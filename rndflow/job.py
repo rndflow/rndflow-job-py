@@ -9,12 +9,12 @@ job_id = int(root.name)
 package_index = 0
 
 #---------------------------------------------------------------------------
-def secret(name, required=False):
+def secret(name, default=None):
     vname = f'RNDFLOW_SECRET_{name.upper()}'
     value = os.environ.get(vname)
-    if required and value is None:
+    if default is None and value is None:
         raise Exception(f'The required environment variable "{vname}" is not set')
-    return value
+    return default if value is None else value
 
 #---------------------------------------------------------------------------
 class Package:

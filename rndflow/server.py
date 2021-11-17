@@ -72,13 +72,13 @@ class Server:
         self.refresh_token = None
 
         if api_key is not None:
-            self.refresh_token = api_key
-            self.refresh_url = f'{self.base_url}/auth/refresh'
+            self.access_token = api_key
+            self.session.headers.update(self.access_header)
         else:
             self.refresh_token = cfg.rndflow_refresh_token
             self.refresh_url = f'{self.base_url}/executor_api/auth/refresh'
+            self.refresh_tokens()
 
-        self.refresh_tokens()
         self.session.hooks['response'].append(self.refresh_as_needed)
 
     @property
@@ -127,8 +127,9 @@ class Server:
     def delete(self, resource, *args, **kwargs):
         return self.session.delete(f'{self.base_url}{resource}', *args, **kwargs)
 
-    def download(self, path, file):
-        path = pathlib.Path(path) / file['name']
+    def download(self, file, path=None, folder=None):
+        if folder is not None:
+            path = pathlib.Path(folder) / file['name']
         path.parent.mkdir(parents=True, exist_ok=True)
 
         print(f'[{timestamp()}] Downloading {path}...')

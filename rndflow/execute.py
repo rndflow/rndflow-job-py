@@ -80,7 +80,7 @@ class Job:
                                 ensure_ascii=False))
 
                 for p, f in files.values():
-                    self.server.download(p, f)
+                    self.server.download(f, folder=p)
 
                 print(f'[{timestamp()}] Job inputs downloaded')
 
