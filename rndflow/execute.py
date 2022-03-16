@@ -96,6 +96,14 @@ class Job:
             script = self.job['node']['script'] or "echo 'Empty script: nothing to do :('\nexit 1"
 
         script_wrapper = dedent(f"""\
+            if ! command -v ts; then
+                echo "ts is not installed in the container!" > {self.job_id}.log
+                exit 1
+            fi
+            if ! command -v tee; then
+                echo "tee is not installed in the container!" > {self.job_id}.log
+                exit 1
+            fi
             (
             {script}
             ) 2>&1 | ts "[%Y-%m-%d %H:%M:%S]" | tee -a {self.job_id}.log
