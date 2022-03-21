@@ -4,7 +4,7 @@ LABEL maintainer "RnDFlow <mail@rndflow.com>"
 
 #RUN groupadd -r rndflow && useradd -r -s /sbin/nologin -g rndflow rndflow
 
-RUN apt-get update && apt-get upgrade -y && apt-get install -y moreutils procps && rm -r /var/lib/apt/lists /var/cache/apt/archives
+RUN apt-get update && apt-get upgrade -y && apt-get install -y moreutils procps time && rm -r /var/lib/apt/lists /var/cache/apt/archives
 
 COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
