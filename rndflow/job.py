@@ -32,7 +32,7 @@ class Package:
             return path.read_text().strip()
 
     def files(self, *suffixes):
-        return [f for f in (self.path / 'files').glob('*')
+        return [f for f in sorted((self.path / 'files').glob('*'))
                 if f.is_file() and (not suffixes or f.suffix.lower() in suffixes) ]
 
     @property
@@ -74,7 +74,7 @@ def params():
 
 #---------------------------------------------------------------------------
 def packages():
-    return [Package(p) for p in (root / 'in').glob('*') if p.is_dir()]
+    return [Package(p) for p in sorted((root / 'in').glob('*')) if p.is_dir()]
 
 #---------------------------------------------------------------------------
 def files(*suffixes):
