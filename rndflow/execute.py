@@ -91,7 +91,7 @@ class Job:
         base_url = os.environ.get('JUPYTER_BASE_URL')
 
         if self.job.get('is_interactive') and base_url:
-            script = f"jupyter notebook --allow-root --no-browser --ip='*' --NotebookApp.base_url={base_url} --NotebookApp.token=''"
+            script = f"$jupyter_interactive --allow-root --no-browser --ip='*' --NotebookApp.base_url={base_url} --NotebookApp.token=''"
         else:
             script = self.job['node']['script'] or "echo 'Empty script: nothing to do :('\nexit 1"
 
@@ -103,6 +103,12 @@ class Job:
             if ! command -v tee; then
                 echo "tee is not installed in the container!" > {self.job_id}.log
                 exit 1
+            fi
+
+            if command -v jupyter-lab; then
+                jupyter_interactive=jupyter-lab
+            else
+                jupyter_interactive=jupyter-notebook
             fi
             (
             {script}
