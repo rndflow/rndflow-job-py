@@ -7,6 +7,8 @@ LABEL maintainer "RnDFlow <mail@rndflow.com>"
 RUN apt-get update && apt-get upgrade -y && apt-get install -y moreutils procps time && rm -r /var/lib/apt/lists /var/cache/apt/archives
 
 COPY requirements.txt requirements.txt
+COPY RELEASE-VERSION RELEASE-VERSION
+
 RUN pip install -r requirements.txt
 COPY . /distr
 RUN pip install /distr && rm -rf /distr
