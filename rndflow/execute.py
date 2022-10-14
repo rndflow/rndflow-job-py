@@ -140,6 +140,8 @@ class Job:
                     links  = self.server.post(f'/executor_api/jobs/{self.job_id}/upload_objects',
                             json={ 'objects': list(h2p.keys()) })
 
+                    print(f'[{timestamp()}] Uploading {len(links)} files to server...')
+
                     for item in links:
                         path = h2p[item['object_id']]
                         link = item['link']
@@ -175,13 +177,19 @@ class Job:
 
                     return files
 
-                self.done.set()
-                self.beat.join()
+                files = upload_files(enumerate_files())
+
+                print(f'[{timestamp()}] Uploading status info to server...')
 
                 self.server.put(f'/executor_api/jobs/{self.job_id}', json={
                     'status': str(self.status),
-                    'files': upload_files(enumerate_files())
+                    'files': files
                     })
+
+                self.done.set()
+                self.beat.join()
+
+                print(f'[{timestamp()}] GoodBye.')
 
     def __enter__(self):
         self.download()
