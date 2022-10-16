@@ -186,10 +186,11 @@ class Job:
                     'files': files
                     })
 
+                print(f'[{timestamp()}] GoodBye.')
+
                 self.done.set()
                 self.beat.join()
 
-                print(f'[{timestamp()}] GoodBye.')
 
     def __enter__(self):
         self.download()
