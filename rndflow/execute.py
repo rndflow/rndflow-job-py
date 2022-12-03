@@ -136,6 +136,7 @@ class Job:
 
                 def upload_files(paths):
                     p2h = {Path(path) : file_hash(path) for path in paths}
+
                     h2p = {h : p for p,h in p2h.items()}
                     links  = self.server.post(f'/executor_api/jobs/{self.job_id}/upload_objects',
                             json={ 'objects': list(h2p.keys()) })
@@ -186,18 +187,34 @@ class Job:
                     'files': files
                     })
 
-                print(f'[{timestamp()}] GoodBye.')
-
-                self.done.set()
-                self.beat.join()
-
 
     def __enter__(self):
         self.download()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.upload()
+        try:
+            self.upload()
+        except Exception as e:
+            tr = traceback.format_exc()
+            print(tr)
+            conTries = 0
+            while conTries < 288: # Try 2 days: 60 min * 24 hour * 2 days / 10 min = 288
+                try:
+                    self.server.post(f'/executor_api/jobs/{self.job_id}/error', json=dict(
+                        error='UploadError', message=tr))
+                    break
+                except Exception as re:
+                    tr = traceback.format_exc()
+                    print(tr)
+                    print('Can not transfer error information to server. Wait...')
+                    time.sleep(600)
+                    conTries +=1
+
+        finally:
+            self.done.set()
+            self.beat.join()
+
 
 #---------------------------------------------------------------------------
 def main():
