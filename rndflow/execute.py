@@ -189,8 +189,17 @@ class Job:
 
 
     def __enter__(self):
-        self.download()
-        return self
+        try:
+            self.download()
+            return self
+        except Exception as e:
+            self.done.set()
+            self.beat.join()
+            tr = traceback.format_exc()
+            print(tr)
+            self.server.post(f'/executor_api/jobs/{self.job_id}/error', json=dict(
+                        error='DownloadError', message=tr))
+            raise e
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
@@ -210,7 +219,6 @@ class Job:
                     print('Can not transfer error information to server. Wait...')
                     time.sleep(600)
                     conTries +=1
-
         finally:
             self.done.set()
             self.beat.join()
