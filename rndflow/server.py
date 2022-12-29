@@ -8,8 +8,9 @@ import requests
 import ssl
 import urllib3
 
+from time import sleep
+from datetime import datetime, timedelta
 from binaryornot.check import is_binary
-from datetime import datetime
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
@@ -45,8 +46,10 @@ def file_hash(path):
     return h.hexdigest()
 
 #---------------------------------------------------------------------------
+
 class Server:
     def __init__(self, api_server=None, api_key=None):
+
         cfg = Settings()
 
         if api_server is None:
@@ -114,11 +117,11 @@ class Server:
     @response_json
     def get(self, resource, *args, **kwargs):
         return self.session.get(f'{self.base_url}{resource}', *args, **kwargs)
-        
+
     @response_json
     def post(self, resource, *args, **kwargs):
         return self.session.post(f'{self.base_url}{resource}', *args, **kwargs)
-        
+
     @response_json
     def put(self, resource, *args, **kwargs):
         return self.session.put(f'{self.base_url}{resource}', *args, **kwargs)
@@ -184,3 +187,207 @@ class Server:
             is_binary     = binary,
             size          = size
             )
+
+#---------------------------------------------------------------------------
+class ServerProxy (Server):
+    """
+    Wrapper for Server class
+    """
+    def __init__(self, api_key:str, project:int, input_node:int, output_node:int, api_server:str=None):
+        """
+        Args:
+            api_key (str): _description_
+            project (int): Project-server ID
+            input_node (int): Input node ID of project-server
+            output_node (int): Output node ID of project-server
+            api_server (str, optional): API server URL. Defaults to None.
+        """
+        self.project = project
+        self.input_node = input_node
+        self.output_node = output_node
+
+        super().__init__(api_key=api_key, api_server=api_server)
+
+    def getServer(prefix:str, api_server:str=None):
+        """
+        Get ServerProxy object.
+
+        Args:
+            prefix (str): API key secrets common prefix name
+            api_server (str,optional): API server URL. Defaults to None.
+
+        Returns:
+             ServerProxy object
+        """
+
+        try:
+            from rndflow.job import secret
+        except:
+            pass
+
+        api_key= secret(f'{prefix}_token')
+        project =  secret(f'{prefix}_project')
+        input_node = secret(f'{prefix}_input')
+        output_node = secret(f'{prefix}_output')
+
+        return ServerProxy(api_key, project, input_node, output_node, api_server)
+
+    def getLastDataLayer(self)->int:
+        """
+        Get the ID of the last data layer available to the user.
+        Returns:
+            int: data layer ID
+        """
+        layer = self.get(f'/projects/{self.project}/data_layers/last')
+        return layer['id']
+
+    def getDataLayers(self)->list:
+        """
+        Get available data layers.
+        Returns:
+            list of dict: list of data layers ID
+        """
+        rez = self.get(f'/projects/{self.project}/data_layers')
+        layers = list(map(lambda x: x['id'], rez))
+        return layers
+
+
+    def postPackage(self, layer: int, label: str, fields: dict)->int:
+        """
+        Send package to input node of the project-server.
+
+        Args:
+            layer (int): data layerd ID
+            label (str): package label
+            fields (dict): package fields
+
+        Returns:
+            int: package ID
+        """
+        package=dict(label=label,felds=fields)
+        return self.postPackage(layer, package)
+
+    def postPackage(self, layer: int, package: dict)->int:
+        """
+        Send package to input node of the project-server.
+
+        Args:
+            layer (int): data layerd ID
+            package (dict): package
+
+        Returns:
+            int: package ID
+        """
+        p = self.post(f'/projects/{self.project}/nodes/{self.input_node}/packages',
+                params=dict(data_layer_id=layer,),
+                json=package)
+        return p['id']
+
+    def searchByMaster(self, layer: int, master: int, page: int=1, page_size: int=1):
+        """
+        Seach package in the output node of the project-server by the master package id.
+
+        Args:
+            layer (int): data layerd ID
+            master (int): master package id
+            page (int): page number, defaults to 1.
+            page_size (int): packages count on page, defaults to 1.
+
+        Returns:
+            dict: result dictionary
+        """
+        return self.post(f'/projects/{self.project}/nodes/{self.output_node}/packages/search',
+        params=dict(
+            data_layer_id=layer,
+            page=page,
+            page_size=page_size
+            ),
+        json=dict(
+            master_id=master
+            ))
+
+    def waitResult(self, layer: int, master: int, timeout=timedelta(minutes=5), retry_pause:int=5, page: int=1, page_size: int=10)->list:
+        """
+
+        Wait for the results packages in the output node of the project-server.
+
+        Args:
+            layer (int): data layerd ID
+            master (int):  master package id
+            timeout (timedelta, optional): Timeout. Defaults to timedelta(minutes=5).
+            retry_pause (int, optional): Pause between requests to output node. Defaults to 5.
+            page (int): page number, defaults to 1.
+            page_size (int): packages count on page, defaults to 10.
+
+        Raises:
+            Exception: Timeout exception
+
+        Returns:
+            list: packages list, total packages count
+        """
+        borderTime = datetime.now() + timeout
+
+        ready = False
+        while not ready and datetime.now() < borderTime:
+            results = self.searchByMaster(layer, master, page, page_size)
+            for result in results['items']:
+                ready = True
+                break
+            else:
+                sleep(retry_pause)
+
+        if not ready:
+            raise Exception('Timeout!')
+
+        return results['items'], results['total']
+
+    def waitOneResult(self, layer: int, master: int, timeout=timedelta(minutes=5), retry_pause:int=5)->list:
+        """
+
+        Wait for the one result package in the output node of the project-server.
+
+        Args:
+            layer (int): data layerd ID
+            master (int):  master package id
+            timeout (timedelta, optional): Timeout. Defaults to timedelta(minutes=5).
+            retry_pause (int, optional): Pause between requests to output node. Defaults to 5.
+
+        Raises:
+            Exception: Timeout exception
+
+        Returns:
+            list: package ID, package fields
+        """
+        items, _ = self.waitResult(layer, master, timeout, retry_pause, 1, 1)
+        return items[0]['id'], items[0]['fields']
+
+    def getFilesList(self, ident: int)->list:
+        """
+        Get files list of package
+        Args:
+            ident (int): package ID
+
+        Returns:
+            list: files list
+        """
+        return self.get(f'/projects/{self.project}/nodes/{self.output_node}/packages/{ident}/files')
+
+    def waitOneResultAndFiles(self, layer, master, timeout=timedelta(minutes=5), retry_pause:int=5)->list:
+        """
+        Wait for the one result package in the output node of the project-server.
+
+        Args:
+            layer (int): data layerd ID
+            master (int):  master package id
+            timeout (timedelta, optional): Timeout. Defaults to timedelta(minutes=5).
+            retry_pause (int, optional): Pause between requests to output node. Defaults to 5.
+
+        Raises:
+            Exception: Timeout exception
+
+        Returns:
+            list: package ID, package fields list, package files list
+        """
+        ident, fields = self.waitOneResult(layer, master, timeout, retry_pause)
+        files = self.getFilesList(ident)
+        return ident, fields, files
