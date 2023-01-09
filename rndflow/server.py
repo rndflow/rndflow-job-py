@@ -196,7 +196,7 @@ class ServerProxy (Server):
     def __init__(self, api_key:str, project:int, input_node:int, output_node:int, api_server:str=None):
         """
         Args:
-            api_key (str): _description_
+            api_key (str): API key
             project (int): Project-server ID
             input_node (int): Input node ID of project-server
             output_node (int): Output node ID of project-server
