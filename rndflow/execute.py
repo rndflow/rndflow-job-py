@@ -55,6 +55,7 @@ class Job:
         with open(self.log_file, 'at', buffering=1) as log_file:
             with contextlib.redirect_stdout(log_file):
                 self.job = self.server.get(f'/executor_api/jobs/{self.job_id}')
+                self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=''))
                 job_files = self.server.get(f'/executor_api/jobs/{self.job_id}/files')
                 job_packages = self.server.get(f'/executor_api/jobs/{self.job_id}/packages')
 
