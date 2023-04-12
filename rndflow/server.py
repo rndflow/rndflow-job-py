@@ -7,6 +7,7 @@ import pathlib
 import requests
 import ssl
 import urllib3
+import sys
 
 from time import sleep
 from datetime import datetime, timedelta
@@ -46,7 +47,11 @@ def file_hash(path):
     return h.hexdigest()
 
 #---------------------------------------------------------------------------
+def log_output_duplicate(mes):
+    print(mes)
+    print(mes, file=sys.__stdout__, flush=True)
 
+#---------------------------------------------------------------------------
 class Server:
     def __init__(self, api_server=None, api_key=None):
 
@@ -135,7 +140,7 @@ class Server:
             path = pathlib.Path(folder) / file['name']
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        print(f'[{timestamp()}] Downloading {path}...')
+        log_output_duplicate(f"[{timestamp()}] Downloading {path}...")
 
         ntries = 2
 
@@ -154,7 +159,7 @@ class Server:
             if h.hexdigest() == file['content_hash']:
                 break
             elif ntries > 0:
-                print(f'[{timestamp()}] {path}: wrong content checksum. retrying...')
+                log_output_duplicate(f'[{timestamp()}] {path}: wrong content checksum. retrying...')
             else:
                 raise Exception(f'{path}: wrong content checksum.')
 

@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from textwrap import dedent
 
-from .server import Server, file_hash, timestamp
+from .server import Server, file_hash, timestamp, log_output_duplicate
 
 class Job:
     HEARTBEAT_INTERVAL = timedelta(seconds=60)
@@ -41,8 +41,8 @@ class Job:
 
                 self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat',
                         json=dict(log_tail=tail))
-            except:
-                print(traceback.format_exc())
+            except Exception as e:
+                print(f'[{timestamp()}] Heartbeat exception: {e}')
 
         chkpt = None
         while not self.done.is_set():
@@ -83,7 +83,7 @@ class Job:
                 for p, f in files.values():
                     self.server.download(f, folder=p)
 
-                print(f'[{timestamp()}] Job inputs downloaded')
+                log_output_duplicate(f'[{timestamp()}] Job inputs data downloaded.')
 
     def execute(self):
         env = os.environ.copy()
@@ -124,7 +124,7 @@ class Job:
     def upload(self):
         with open(self.log_file, 'at', buffering=1) as log_file:
             with contextlib.redirect_stdout(log_file):
-                print(f'[{timestamp()}] Uploading job output to server...')
+                log_output_duplicate(f'[{timestamp()}] Uploading job output to server...')
 
                 exclude_dirs = ('in', '__pycache__', '.ipynb_checkpoints')
                 def enumerate_files():
@@ -142,7 +142,7 @@ class Job:
                     links  = self.server.post(f'/executor_api/jobs/{self.job_id}/upload_objects',
                             json={ 'objects': list(h2p.keys()) })
 
-                    print(f'[{timestamp()}] Uploading {len(links)} files to server...')
+                    log_output_duplicate(f'[{timestamp()}] Uploading {len(links)} files to server...')
 
                     for item in links:
                         path = h2p[item['object_id']]
@@ -159,7 +159,7 @@ class Job:
                                     'Content-Type': type,
                                     'Content-Length': str(path.stat().st_size)
                                     }).raise_for_status()
-
+                                log_output_duplicate(f"[{timestamp()}] Upload  '{path}' file to server...")
 
                     files = []
                     for path,h in p2h.items():
@@ -181,13 +181,14 @@ class Job:
 
                 files = upload_files(enumerate_files())
 
-                print(f'[{timestamp()}] Uploading status info to server...')
+                log_output_duplicate(f"[{timestamp()}] Uploading status info to server...")
 
                 self.server.put(f'/executor_api/jobs/{self.job_id}', json={
                     'status': str(self.status),
                     'files': files
                     })
 
+                log_output_duplicate(f"[{timestamp()}] Jobs data uploading completed.")
 
     def __enter__(self):
         try:
@@ -197,7 +198,7 @@ class Job:
             self.done.set()
             self.beat.join()
             tr = traceback.format_exc()
-            print(tr)
+            print(f'[{timestamp()}] {tr}')
             self.server.post(f'/executor_api/jobs/{self.job_id}/error', json=dict(
                         error='DownloadError', message=tr))
             raise e
@@ -207,7 +208,7 @@ class Job:
             self.upload()
         except Exception as e:
             tr = traceback.format_exc()
-            print(tr)
+            print(f'[{timestamp()}] {tr}')
             conTries = 0
             while conTries < 288: # Try 2 days: 60 min * 24 hour * 2 days / 10 min = 288
                 try:
@@ -216,14 +217,13 @@ class Job:
                     break
                 except Exception as re:
                     tr = traceback.format_exc()
-                    print(tr)
-                    print('Can not transfer error information to server. Wait...')
+                    print(f'[{timestamp()}] {tr}')
+                    print(f'[{timestamp()}] Can not transfer error information to server. Wait...')
                     time.sleep(600)
                     conTries +=1
         finally:
             self.done.set()
             self.beat.join()
-
 
 #---------------------------------------------------------------------------
 def main():
