@@ -144,6 +144,8 @@ class Job:
 
                     log_output_duplicate(f'[{timestamp()}] Uploading {len(links)} files to server...')
 
+                    links.reverse() # Move log file to end.
+
                     for item in links:
                         path = h2p[item['object_id']]
                         link = item['link']
