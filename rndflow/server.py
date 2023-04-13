@@ -52,6 +52,21 @@ def log_output_duplicate(mes):
     print(mes, file=sys.__stdout__, flush=True)
 
 #---------------------------------------------------------------------------
+class TimeoutHTTPAdapter(HTTPAdapter):
+    def __init__(self, *args, **kwargs):
+        self.timeout = 10
+        if "timeout" in kwargs:
+            self.timeout = kwargs["timeout"]
+            del kwargs["timeout"]
+        super().__init__(*args, **kwargs)
+
+    def send(self, request, **kwargs):
+        timeout = kwargs.get("timeout")
+        if timeout is None:
+            kwargs["timeout"] = self.timeout
+        return super().send(request, **kwargs)
+
+#---------------------------------------------------------------------------
 class Server:
     def __init__(self, api_server=None, api_key=None):
 
@@ -63,18 +78,40 @@ class Server:
 
         self.base_url = f'{api_server}/api'
 
+        # https://findwork.dev/blog/advanced-usage-python-requests-timeouts-retries-hooks
+        # https://www.peterbe.com/plog/best-practice-with-retries-with-requests
+        adapter = TimeoutHTTPAdapter(timeout=cfg.rndflow_common_conn_timeout, max_retries=Retry(
+            total=cfg.rndflow_common_conn_retry_total,
+            read=cfg.rndflow_common_conn_retry_read,
+            connect=cfg.rndflow_common_conn_retry_connect,
+            redirect=cfg.rndflow_common_conn_retry_redirect,
+            status=cfg.rndflow_common_conn_retry_status,
+            other=cfg.rndflow_common_conn_retry_other,
+            backoff_factor=cfg.rndflow_common_conn_retry_backoff_factor,
+            status_forcelist=(502,504)))
+
+        adapter_spec = TimeoutHTTPAdapter(timeout=cfg.rndflow_spec_conn_timeout, max_retries=Retry(
+            total=cfg.rndflow_spec_conn_retry_total,
+            read=cfg.rndflow_spec_conn_retry_read,
+            connect=cfg.rndflow_spec_conn_retry_connect,
+            redirect=cfg.rndflow_spec_conn_retry_redirect,
+            status=cfg.rndflow_spec_conn_retry_status,
+            other=cfg.rndflow_spec_conn_retry_other,
+            backoff_factor=cfg.rndflow_spec_conn_retry_backoff_factor,
+            status_forcelist=(502,504)))
+
         self.session = requests.Session()
         self.raw_session = requests.Session()
-
-        # https://www.peterbe.com/plog/best-practice-with-retries-with-requests
-        adapter = HTTPAdapter(max_retries=Retry(
-            total=3, read=3, connect=3,
-            backoff_factor=0.3, status_forcelist=(502,504)))
+        self.spec_session = requests.Session()
 
         for session in (self.session, self.raw_session):
             session.mount('http://', adapter)
             session.mount('https://', adapter)
             session.verify = False
+
+        self.spec_session.mount('http://', adapter_spec)
+        self.spec_session.mount('https://', adapter_spec)
+        self.spec_session.verify = False
 
         self.access_token = None
         self.refresh_token = None
@@ -82,12 +119,14 @@ class Server:
         if api_key is not None:
             self.access_token = api_key
             self.session.headers.update(self.access_header)
+            self.spec_session.headers.update(self.access_header)
         else:
             self.refresh_token = cfg.rndflow_refresh_token
             self.refresh_url = f'{self.base_url}/executor_api/auth/refresh'
             self.refresh_tokens()
 
         self.session.hooks['response'].append(self.refresh_as_needed)
+        self.spec_session.hooks['response'].append(self.refresh_as_needed_spec)
 
     @property
     def access_header(self):
@@ -109,6 +148,7 @@ class Server:
         self.refresh_token = data['refresh_token']
 
         self.session.headers.update(self.access_header)
+        self.spec_session.headers.update(self.access_header)
 
     def refresh_as_needed(self, response, *args, **kwargs):
         if response.status_code == requests.codes.unauthorized and self.refresh_token:
@@ -118,6 +158,15 @@ class Server:
             request.headers.update(self.access_header)
 
             return self.session.send(request)
+
+    def refresh_as_needed_spec(self, response, *args, **kwargs):
+        if response.status_code == requests.codes.unauthorized and self.refresh_token:
+            self.refresh_tokens()
+
+            request = response.request
+            request.headers.update(self.access_header)
+
+            return self.spec_session.send(request)
 
     @response_json
     def get(self, resource, *args, **kwargs):
@@ -130,6 +179,10 @@ class Server:
     @response_json
     def put(self, resource, *args, **kwargs):
         return self.session.put(f'{self.base_url}{resource}', *args, **kwargs)
+
+    @response_json
+    def spec_put(self, resource, *args, **kwargs):
+        return self.spec_session.put(f'{self.base_url}{resource}', *args, **kwargs)
 
     @response_json
     def delete(self, resource, *args, **kwargs):

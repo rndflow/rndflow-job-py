@@ -27,6 +27,9 @@ class Job:
         self.root.mkdir(parents=True, exist_ok=True)
 
         self.log_file = self.root / f'{self.job_id}.log'
+
+        self.data_upload = False
+
         self.done = threading.Event()
         self.beat = threading.Thread(target=self.heartbeat)
         self.beat.start()
@@ -124,7 +127,7 @@ class Job:
     def upload(self):
         with open(self.log_file, 'at', buffering=1) as log_file:
             with contextlib.redirect_stdout(log_file):
-                log_output_duplicate(f'[{timestamp()}] Uploading job output to server...')
+                log_output_duplicate(f'[{timestamp()}] Uploading job output to server and S3 server...')
 
                 exclude_dirs = ('in', '__pycache__', '.ipynb_checkpoints')
                 def enumerate_files():
@@ -142,7 +145,7 @@ class Job:
                     links  = self.server.post(f'/executor_api/jobs/{self.job_id}/upload_objects',
                             json={ 'objects': list(h2p.keys()) })
 
-                    log_output_duplicate(f'[{timestamp()}] Uploading {len(links)} files to server...')
+                    log_output_duplicate(f'[{timestamp()}] Uploading {len(links)} files to S3 server...')
 
                     links.reverse() # Move log file to end.
 
@@ -161,7 +164,7 @@ class Job:
                                     'Content-Type': type,
                                     'Content-Length': str(path.stat().st_size)
                                     }).raise_for_status()
-                                log_output_duplicate(f"[{timestamp()}] Upload  '{path}' file to server...")
+                                log_output_duplicate(f"[{timestamp()}] Uploaded '{path}' file to S3 server.")
 
                     files = []
                     for path,h in p2h.items():
@@ -183,12 +186,14 @@ class Job:
 
                 files = upload_files(enumerate_files())
 
-                log_output_duplicate(f"[{timestamp()}] Uploading status info to server...")
+                log_output_duplicate(f"[{timestamp()}] Uploading info to the server for creating output packages...")
 
-                self.server.put(f'/executor_api/jobs/{self.job_id}', json={
+                self.server.spec_put(f'/executor_api/jobs/{self.job_id}', json={
                     'status': str(self.status),
                     'files': files
                     })
+
+                self.data_upload = True
 
                 log_output_duplicate(f"[{timestamp()}] Jobs data uploading completed.")
 
@@ -212,7 +217,7 @@ class Job:
             tr = traceback.format_exc()
             print(f'[{timestamp()}] {tr}')
             conTries = 0
-            while conTries < 288: # Try 2 days: 60 min * 24 hour * 2 days / 10 min = 288
+            while conTries < 288 and not self.data_upload: # Try 2 days: 60 min * 24 hour * 2 days / 10 min = 288
                 try:
                     self.server.post(f'/executor_api/jobs/{self.job_id}/error', json=dict(
                         error='UploadError', message=tr))
