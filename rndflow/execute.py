@@ -87,6 +87,7 @@ class Job:
                     self.server.download(f, folder=p)
 
                 log_output_duplicate(f'[{timestamp()}] Job inputs data downloaded.')
+                self.server.post(f'/executor_api/jobs/{self.job_id}/status', json=dict(status='downloaded'))
 
     def execute(self):
         env = os.environ.copy()
