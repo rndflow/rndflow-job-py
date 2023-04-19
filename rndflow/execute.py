@@ -34,16 +34,18 @@ class Job:
         self.beat = threading.Thread(target=self.heartbeat)
         self.beat.start()
 
+    def log_tail(self):
+        if self.log_file.is_file:
+            tail = ''.join(deque(open(self.log_file), 100))
+        else:
+            tail = ''
+
+        return tail
+
     def heartbeat(self):
         def send():
             try:
-                if self.log_file.is_file:
-                    tail = ''.join(deque(open(self.log_file), 100))
-                else:
-                    tail = ''
-
-                self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat',
-                        json=dict(log_tail=tail))
+                self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=self.log_tail()))
             except Exception as e:
                 print(f'[{timestamp()}] Heartbeat exception: {e}')
 
@@ -58,7 +60,7 @@ class Job:
         with open(self.log_file, 'at', buffering=1) as log_file:
             with contextlib.redirect_stdout(log_file):
                 self.job = self.server.get(f'/executor_api/jobs/{self.job_id}')
-                self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=''))
+                self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=self.log_tail()))
                 job_files = self.server.get(f'/executor_api/jobs/{self.job_id}/files')
                 job_packages = self.server.get(f'/executor_api/jobs/{self.job_id}/packages')
 
@@ -188,6 +190,8 @@ class Job:
                 files = upload_files(enumerate_files())
 
                 log_output_duplicate(f"[{timestamp()}] Uploading info to the server for creating output packages...")
+
+                self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=self.log_tail())) # send last log_tail.
 
                 self.server.spec_put(f'/executor_api/jobs/{self.job_id}', json={
                     'status': str(self.status),
