@@ -70,7 +70,6 @@ class Job:
                             {m['name'] : m['value'] for m in self.job['fields']},
                             ensure_ascii=False))
 
-
                 files = {self.root / f['name']: (self.root, f)
                         for f in job_files if Path(f['name']).parts[0] != 'out'}
 
@@ -139,9 +138,29 @@ class Job:
                         dirs[:] = [d for d in dirs
                             if (path / d).relative_to(self.root).parts[0] not in exclude_dirs]
                         for f in files:
-                            yield path / f
+                            if self.root / f != self.log_file:
+                                yield path / f
 
                 def upload_files(paths):
+
+                    def get_binary_and_type(path):
+                        binary = is_binary(str(path))
+
+                        file_type, _ = mimetypes.guess_type(str(path))
+                        if file_type is None:
+                            file_type = 'application/x-binary' if binary else 'text/plain'
+
+                        return binary, file_type
+
+                    def upload_file_to_s3(link, path):
+                        if link is not None:
+                            binary, file_type = get_binary_and_type(path)
+                            with open(path, 'rb') as f:
+                                self.server.raw_session.put(link, data=f, headers={
+                                    'Content-Type': file_type,
+                                    'Content-Length': str(path.stat().st_size)
+                                    }).raise_for_status()
+
                     p2h = {Path(path) : file_hash(path) for path in paths}
 
                     h2p = {h : p for p,h in p2h.items()}
@@ -150,35 +169,25 @@ class Job:
 
                     log_output_duplicate(f'[{timestamp()}] Uploading {len(links)} files to S3 server...')
 
-                    links.reverse() # Move log file to end.
-
                     for item in links:
                         path = h2p[item['object_id']]
                         link = item['link']
 
-                        binary = is_binary(str(path))
-                        type,_ = mimetypes.guess_type(str(path))
-                        if type is None:
-                            type = 'application/x-binary' if binary else 'text/plain'
+                        upload_file_to_s3(link, path)
+                        log_output_duplicate(f"[{timestamp()}] Uploaded '{path}' file to S3 server.")
 
-                        if link is not None:
-                            with open(path, 'rb') as f:
-                                self.server.raw_session.put(link, data=f, headers={
-                                    'Content-Type': type,
-                                    'Content-Length': str(path.stat().st_size)
-                                    }).raise_for_status()
-                                log_output_duplicate(f"[{timestamp()}] Uploaded '{path}' file to S3 server.")
+                    log_link = self.server.post(f'/executor_api/jobs/{self.job_id}/upload_objects', json={ 'objects': [file_hash(self.log_file)]})
+                    upload_file_to_s3(log_link[0]['link'], self.log_file)
+                    p2h[self.log_file] = file_hash(self.log_file)
+
+                    # Do not put any log output here! Log file size will be incorrect!
 
                     files = []
                     for path,h in p2h.items():
-                        binary = is_binary(str(path))
-                        type,_ = mimetypes.guess_type(str(path))
-                        if type is None:
-                            type = 'application/x-binary' if binary else 'text/plain'
-
+                        binary, file_type = get_binary_and_type(path)
                         files.append(dict(
                             name          = str(path.relative_to(self.root)),
-                            type          = type,
+                            type          = file_type,
                             content_hash  = h,
                             is_executable = os.access(path, os.X_OK),
                             is_binary     = binary,
