@@ -6,6 +6,8 @@ import numpy
 
 from .file_readers import file_readers
 
+from .logger import logger
+
 root = Path('.').resolve()
 job_id = int(root.name)  # pylint: disable=invalid-name #(historical)
 package_index = 0        # pylint: disable=invalid-name #(historical)
@@ -55,7 +57,7 @@ class Package:
             if reader:
                 data[f.stem] = reader(f)
             else:
-                print(f'Skipping {f}: unknown format')
+                logger.warning('Skipping %s: unknown format', f)
 
         return data
 
@@ -149,6 +151,7 @@ def save_package(label=None, files=None, fields=None, images=None):
             v.write_json(str(f.with_suffix('.plt')))
 
         else:
-            print(f'Skipped image {k}: unknown format')
+            logger.warning('Skipped image %s: unknown format', k)
+
 
     return path

@@ -1,7 +1,6 @@
 import os
 import functools
 import hashlib
-import sys
 import mimetypes
 from time import sleep
 from datetime import datetime, timedelta
@@ -13,16 +12,11 @@ from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
 from .config import Settings
+from .logger import logger
 
 ##import ssl
 #urllib3.disable_warnings()
 #ssl._create_default_https_context = ssl._create_unverified_context
-
-
-#---------------------------------------------------------------------------
-def timestamp():
-    #return datetime.now().replace(microsecond=0).isoformat(sep=' ')
-    return datetime.now().strftime(Settings().rndflow_dateformat)
 
 #---------------------------------------------------------------------------
 def response_json(fn):
@@ -45,11 +39,6 @@ def file_hash(path):
             h.update(b)
 
     return h.hexdigest()
-
-#---------------------------------------------------------------------------
-def log_output_duplicate(mes):
-    print(mes)
-    print(mes, file=sys.__stdout__, flush=True)
 
 #---------------------------------------------------------------------------
 class TimeoutHTTPAdapter(HTTPAdapter):
@@ -200,7 +189,7 @@ class Server:
             path = pathlib.Path(folder) / file['name']
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        log_output_duplicate(f"[{timestamp()}] Downloading {path}...")
+        logger.info('Downloading %s ...', path)
 
         ntries = 2
 
@@ -218,8 +207,9 @@ class Server:
 
             if h.hexdigest() == file['content_hash']:
                 break
-            elif ntries > 0:
-                log_output_duplicate(f'[{timestamp()}] {path}: wrong content checksum. retrying...')
+
+            if ntries > 0:
+                logger.info('%s: wrong content checksum. retrying...', path)
             else:
                 raise Exception(f'{path}: wrong content checksum.')
 

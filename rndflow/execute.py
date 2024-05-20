@@ -1,4 +1,3 @@
-import contextlib
 import json
 import mimetypes
 import os
@@ -15,7 +14,10 @@ from textwrap import dedent
 import argparse
 from binaryornot.check import is_binary
 
-from .server import Server, file_hash, timestamp, log_output_duplicate
+from .server import Server, file_hash
+from .config import Settings
+
+from .logger import make_file_stdout_logger
 
 class Job:
     HEARTBEAT_INTERVAL = timedelta(seconds=60)
@@ -25,11 +27,13 @@ class Job:
         self.status = None
         self.job_id = job_id
         self.server = Server(host)
+        self.cfg = Settings()
 
         self.root = Path(str(job_id)).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
 
         self.log_file = self.root / f'{self.job_id}.log'
+        self.logger = make_file_stdout_logger(self.log_file)
 
         self.data_upload = False
 
@@ -51,7 +55,7 @@ class Job:
             try:
                 self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=self.log_tail()))
             except Exception as e:
-                print(f'[{timestamp()}] Heartbeat exception: {e}')
+                self.logger.error('Heartbeat exception: %s', e)
 
         chkpt = None
         while not self.done.is_set():
@@ -61,38 +65,38 @@ class Job:
                 chkpt = datetime.now() + self.HEARTBEAT_INTERVAL
 
     def download(self):
-        with open(self.log_file, 'at', buffering=1, encoding="utf-8") as log_file:
-            with contextlib.redirect_stdout(log_file):
-                self.job = self.server.get(f'/executor_api/jobs/{self.job_id}')
-                self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=self.log_tail()))
-                job_files = self.server.get(f'/executor_api/jobs/{self.job_id}/files')
-                job_packages = self.server.get(f'/executor_api/jobs/{self.job_id}/packages')
 
-                (self.root / 'in').mkdir(parents=True, exist_ok=True)
-                (self.root / 'in' / 'params.json').write_text(
-                        json.dumps(
-                            {m['name'] : m['value'] for m in self.job['fields']},
-                            ensure_ascii=False))
+        self.job = self.server.get(f'/executor_api/jobs/{self.job_id}')
+        self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=self.log_tail()))
+        job_files = self.server.get(f'/executor_api/jobs/{self.job_id}/files')
+        job_packages = self.server.get(f'/executor_api/jobs/{self.job_id}/packages')
 
-                files = {self.root / f['name']: (self.root, f)
-                        for f in job_files if Path(f['name']).parts[0] != 'out'}
+        (self.root / 'in').mkdir(parents=True, exist_ok=True)
+        (self.root / 'in' / 'params.json').write_text(
+                json.dumps(
+                    {m['name'] : m['value'] for m in self.job['fields']},
+                    ensure_ascii=False))
 
-                for package in job_packages:
-                    path = self.root / 'in' / str(package['id'])
-                    path.mkdir(parents=True, exist_ok=True)
+        files = {self.root / f['name']: (self.root, f)
+                for f in job_files if Path(f['name']).parts[0] != 'out'}
 
-                    (path / 'label').write_text(package['label'])
+        for package in job_packages:
+            path = self.root / 'in' / str(package['id'])
+            path.mkdir(parents=True, exist_ok=True)
 
-                    (path / 'fields.json').write_text(
-                            json.dumps(
-                                {m['name'] : m['value'] for m in package['fields']},
-                                ensure_ascii=False))
+            (path / 'label').write_text(package['label'])
 
-                for p, f in files.values():
-                    self.server.download(f, folder=p)
+            (path / 'fields.json').write_text(
+                    json.dumps(
+                        {m['name'] : m['value'] for m in package['fields']},
+                        ensure_ascii=False))
 
-                log_output_duplicate(f'[{timestamp()}] Job inputs data downloaded.')
-                self.server.post(f'/executor_api/jobs/{self.job_id}/status', json=dict(status='downloaded'))
+        for p, f in files.values():
+            self.server.download(f, folder=p)
+
+        self.logger.info('Job inputs data downloaded.')
+
+        self.server.post(f'/executor_api/jobs/{self.job_id}/status', json=dict(status='downloaded'))
 
     def execute(self):
         env = os.environ.copy()
@@ -122,7 +126,7 @@ class Job:
             fi
             (
             {script}
-            ) 2>&1 | ts "[%Y-%m-%d %H:%M:%S]" | tee -a {self.job_id}.log
+            ) 2>&1 | ts "[{self.cfg.rndflow_dateformat}]" | tee -a {self.job_id}.log
             rc=${{PIPESTATUS[0]}}
             exit $rc
             """)
@@ -131,89 +135,87 @@ class Job:
         self.status = p.returncode
 
     def upload(self):
-        with open(self.log_file, 'at', buffering=1, encoding="utf-8") as log_file:
-            with contextlib.redirect_stdout(log_file):
-                log_output_duplicate(f'[{timestamp()}] Uploading job output to server and S3 server...')
+        self.logger.info('Uploading job output to server and S3 server...')
 
-                exclude_dirs = ('in', '__pycache__', '.ipynb_checkpoints')
-                def enumerate_files():
-                    for directory, dirs, files in os.walk(self.root):
-                        path = Path(directory)
-                        dirs[:] = [d for d in dirs
-                            if (path / d).relative_to(self.root).parts[0] not in exclude_dirs]
-                        for f in files:
-                            if self.root / f != self.log_file:
-                                yield path / f
+        exclude_dirs = ('in', '__pycache__', '.ipynb_checkpoints')
+        def enumerate_files():
+            for directory, dirs, files in os.walk(self.root):
+                path = Path(directory)
+                dirs[:] = [d for d in dirs
+                    if (path / d).relative_to(self.root).parts[0] not in exclude_dirs]
+                for f in files:
+                    if self.root / f != self.log_file:
+                        yield path / f
 
-                def upload_files(paths):
+        def upload_files(paths):
 
-                    def get_binary_and_type(path):
-                        binary = is_binary(str(path))
+            def get_binary_and_type(path):
+                binary = is_binary(str(path))
 
-                        file_type, _ = mimetypes.guess_type(str(path))
-                        if file_type is None:
-                            file_type = 'application/x-binary' if binary else 'text/plain'
+                file_type, _ = mimetypes.guess_type(str(path))
+                if file_type is None:
+                    file_type = 'application/x-binary' if binary else 'text/plain'
 
-                        return binary, file_type
+                return binary, file_type
 
-                    def upload_file_to_s3(link, path):
-                        if link is not None:
-                            _, file_type = get_binary_and_type(path)
-                            with open(path, 'rb') as f:
-                                self.server.raw_session.put(link, data=f, headers={
-                                    'Content-Type': file_type,
-                                    'Content-Length': str(path.stat().st_size)
-                                    }).raise_for_status()
+            def upload_file_to_s3(link, path):
+                if link is not None:
+                    _, file_type = get_binary_and_type(path)
+                    with open(path, 'rb') as f:
+                        self.server.raw_session.put(link, data=f, headers={
+                            'Content-Type': file_type,
+                            'Content-Length': str(path.stat().st_size)
+                            }).raise_for_status()
 
-                    p2h = {Path(path) : file_hash(path) for path in paths}
+            p2h = {Path(path) : file_hash(path) for path in paths}
 
-                    h2p = {h : p for p,h in p2h.items()}
-                    links  = self.server.post(f'/executor_api/jobs/{self.job_id}/upload_objects',
-                            json={ 'objects': list(h2p.keys()) })
+            h2p = {h : p for p,h in p2h.items()}
+            links  = self.server.post(f'/executor_api/jobs/{self.job_id}/upload_objects',
+                    json={ 'objects': list(h2p.keys()) })
 
-                    log_output_duplicate(f'[{timestamp()}] Uploading {len(links)} files to S3 server...')
+            self.logger.info('Uploading %s files to S3 server...', len(links))
 
-                    for item in links:
-                        path = h2p[item['object_id']]
-                        link = item['link']
+            for item in links:
+                path = h2p[item['object_id']]
+                link = item['link']
 
-                        upload_file_to_s3(link, path)
-                        log_output_duplicate(f"[{timestamp()}] Uploaded '{path}' file to S3 server.")
+                upload_file_to_s3(link, path)
+                self.logger.info('Uploaded %s file to S3 server.', path)
 
-                    log_link = self.server.post(f'/executor_api/jobs/{self.job_id}/upload_objects', json={ 'objects': [file_hash(self.log_file)]})
-                    upload_file_to_s3(log_link[0]['link'], self.log_file)
-                    p2h[self.log_file] = file_hash(self.log_file)
+            log_link = self.server.post(f'/executor_api/jobs/{self.job_id}/upload_objects', json={ 'objects': [file_hash(self.log_file)]})
+            upload_file_to_s3(log_link[0]['link'], self.log_file)
+            p2h[self.log_file] = file_hash(self.log_file)
 
-                    # Do not put any log output here! Log file size will be incorrect!
+            # Do not put any log output here! Log file size will be incorrect!
 
-                    files = []
-                    for path,h in p2h.items():
-                        binary, file_type = get_binary_and_type(path)
-                        files.append(dict(
-                            name          = str(path.relative_to(self.root)),
-                            type          = file_type,
-                            content_hash  = h,
-                            is_executable = os.access(path, os.X_OK),
-                            is_binary     = binary,
-                            size          = path.stat().st_size
-                            ))
+            files = []
+            for path,h in p2h.items():
+                binary, file_type = get_binary_and_type(path)
+                files.append(dict(
+                    name          = str(path.relative_to(self.root)),
+                    type          = file_type,
+                    content_hash  = h,
+                    is_executable = os.access(path, os.X_OK),
+                    is_binary     = binary,
+                    size          = path.stat().st_size
+                    ))
 
-                    return files
+            return files
 
-                files = upload_files(enumerate_files())
+        files = upload_files(enumerate_files())
 
-                log_output_duplicate(f"[{timestamp()}] Uploading info to the server for creating output packages...")
+        self.logger.info('Uploading info to the server for creating output packages...')
+        self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=self.log_tail()))
 
-                self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=self.log_tail())) # send last log_tail.
+        self.server.spec_put(f'/executor_api/jobs/{self.job_id}', json={
+            'status': str(self.status),
+            'files': files
+            })
 
-                self.server.spec_put(f'/executor_api/jobs/{self.job_id}', json={
-                    'status': str(self.status),
-                    'files': files
-                    })
+        self.data_upload = True
 
-                self.data_upload = True
-
-                log_output_duplicate(f"[{timestamp()}] Jobs data uploading completed.")
+        self.logger.info('Jobs data uploading completed.')
+        self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=self.log_tail()))
 
     def __enter__(self):
         try:
@@ -223,7 +225,7 @@ class Job:
             self.done.set()
             self.beat.join()
             tr = traceback.format_exc()
-            print(f'[{timestamp()}] {tr}')
+            self.logger.error('Download error: %s', tr)
             self.server.post(f'/executor_api/jobs/{self.job_id}/error', json=dict(
                         error='DownloadError', message=tr))
             raise e
@@ -233,7 +235,7 @@ class Job:
             self.upload()
         except Exception:
             tr = traceback.format_exc()
-            print(f'[{timestamp()}] {tr}')
+            self.logger.error('Upload error: %s', tr)
             con_tries = 0
             while con_tries < 288 and not self.data_upload: # Try 2 days: 60 min * 24 hour * 2 days / 10 min = 288
                 try:
@@ -242,8 +244,8 @@ class Job:
                     break
                 except Exception:
                     tr = traceback.format_exc()
-                    print(f'[{timestamp()}] {tr}')
-                    print(f'[{timestamp()}] Can not transfer error information to server. Wait...')
+                    self.logger.error('Upload error: %s', tr)
+                    self.logger.error('Can not transfer error information to server. Wait...')
                     time.sleep(600)
                     con_tries +=1
         finally:
