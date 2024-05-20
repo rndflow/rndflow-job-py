@@ -21,7 +21,8 @@ from .config import Settings
 
 #---------------------------------------------------------------------------
 def timestamp():
-    return datetime.now().replace(microsecond=0).isoformat(sep=' ')
+    #return datetime.now().replace(microsecond=0).isoformat(sep=' ')
+    return datetime.now().strftime(Settings().rndflow_dateformat)
 
 #---------------------------------------------------------------------------
 def response_json(fn):

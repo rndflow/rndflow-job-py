@@ -31,3 +31,7 @@ class Settings(BaseSettings):
 
     rndflow_spec_conn_timeout: Union[int, float] = 300
     rndflow_spec_conn_read_timeout: Union[int, float] = 300000
+
+    rndflow_logging_level: str = 'INFO'
+    #rndflow_timezone: str = 'Europe/Moscow' # sets by executor
+    rndflow_dateformat: str = '%d-%m-%Y %H:%M:%S %Z (%z)'
