@@ -1,35 +1,34 @@
+import os
 import functools
 import hashlib
-import json
-import mimetypes
-import os
-import pathlib
-import requests
-import ssl
-import urllib3
 import sys
-
+import mimetypes
 from time import sleep
 from datetime import datetime, timedelta
+import pathlib
+import requests
+
 from binaryornot.check import is_binary
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
-
-urllib3.disable_warnings()
-ssl._create_default_https_context = ssl._create_unverified_context
+from urllib3.util import Retry
 
 from .config import Settings
 
+##import ssl
+#urllib3.disable_warnings()
+#ssl._create_default_https_context = ssl._create_unverified_context
+
+
 #---------------------------------------------------------------------------
 def timestamp():
-    return datetime.utcnow().replace(microsecond=0).isoformat(sep=' ')
+    return datetime.now().replace(microsecond=0).isoformat(sep=' ')
 
 #---------------------------------------------------------------------------
 def response_json(fn):
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         r = fn(*args, **kwargs)
-        if r.status_code != requests.codes.ok:
+        if r.status_code != requests.codes.ok: # pylint: disable=no-member
             print(*args[1:], r.text)
         r.raise_for_status()
         return r.json()
@@ -53,18 +52,19 @@ def log_output_duplicate(mes):
 
 #---------------------------------------------------------------------------
 class TimeoutHTTPAdapter(HTTPAdapter):
-    def __init__(self, *args, **kwargs):
-        self.timeout = 10
-        if "timeout" in kwargs:
-            self.timeout = kwargs["timeout"]
-            del kwargs["timeout"]
+    def __init__(self, timeout, ssl_verify, *args, **kwargs):
+        self.ssl_verify = ssl_verify
+        self.timeout = timeout
+
         super().__init__(*args, **kwargs)
 
-    def send(self, request, **kwargs):
-        timeout = kwargs.get("timeout")
+    def send(self, request, stream=False, timeout=None, verify=None, cert=None, proxies=None, **kwargs):
         if timeout is None:
-            kwargs["timeout"] = self.timeout
-        return super().send(request, **kwargs)
+            timeout = self.timeout
+
+        if verify is None:
+            verify = self.ssl_verify
+        return super().send(request, stream, timeout, verify, cert, proxies, **kwargs)
 
 #---------------------------------------------------------------------------
 class Server:
@@ -80,25 +80,31 @@ class Server:
 
         # https://findwork.dev/blog/advanced-usage-python-requests-timeouts-retries-hooks
         # https://www.peterbe.com/plog/best-practice-with-retries-with-requests
-        adapter = TimeoutHTTPAdapter(timeout=cfg.rndflow_common_conn_timeout, max_retries=Retry(
-            total=cfg.rndflow_common_conn_retry_total,
-            read=cfg.rndflow_common_conn_retry_read,
-            connect=cfg.rndflow_common_conn_retry_connect,
-            redirect=cfg.rndflow_common_conn_retry_redirect,
-            status=cfg.rndflow_common_conn_retry_status,
-            other=cfg.rndflow_common_conn_retry_other,
-            backoff_factor=cfg.rndflow_common_conn_retry_backoff_factor,
-            status_forcelist=(502,504)))
+        adapter = TimeoutHTTPAdapter(timeout=(cfg.rndflow_common_conn_timeout, cfg.rndflow_common_conn_read_timeout),
+            ssl_verify=cfg.rndflow_ssl_verify,
+            max_retries=Retry(
+                total=cfg.rndflow_common_conn_retry_total,
+                read=cfg.rndflow_common_conn_retry_read,
+                connect=cfg.rndflow_common_conn_retry_connect,
+                redirect=cfg.rndflow_common_conn_retry_redirect,
+                status=cfg.rndflow_common_conn_retry_status,
+                other=cfg.rndflow_common_conn_retry_other,
+                backoff_factor=cfg.rndflow_common_conn_retry_backoff_factor,
+                status_forcelist=(502,504))
+            )
 
-        adapter_spec = TimeoutHTTPAdapter(timeout=cfg.rndflow_spec_conn_timeout, max_retries=Retry(
-            total=cfg.rndflow_spec_conn_retry_total,
-            read=cfg.rndflow_spec_conn_retry_read,
-            connect=cfg.rndflow_spec_conn_retry_connect,
-            redirect=cfg.rndflow_spec_conn_retry_redirect,
-            status=cfg.rndflow_spec_conn_retry_status,
-            other=cfg.rndflow_spec_conn_retry_other,
-            backoff_factor=cfg.rndflow_spec_conn_retry_backoff_factor,
-            status_forcelist=(502,504)))
+        adapter_spec = TimeoutHTTPAdapter(timeout=(cfg.rndflow_spec_conn_timeout, cfg.rndflow_spec_conn_read_timeout),
+            ssl_verify=cfg.rndflow_ssl_verify,
+            max_retries=Retry(
+                total=cfg.rndflow_spec_conn_retry_total,
+                read=cfg.rndflow_spec_conn_retry_read,
+                connect=cfg.rndflow_spec_conn_retry_connect,
+                redirect=cfg.rndflow_spec_conn_retry_redirect,
+                status=cfg.rndflow_spec_conn_retry_status,
+                other=cfg.rndflow_spec_conn_retry_other,
+                backoff_factor=cfg.rndflow_spec_conn_retry_backoff_factor,
+                status_forcelist=(502,504))
+            )
 
         self.session = requests.Session()
         self.raw_session = requests.Session()
@@ -139,7 +145,7 @@ class Server:
     def refresh_tokens(self):
         r = self.raw_session.post(self.refresh_url,
                 headers=self.refresh_header)
-        if r.status_code != requests.codes.ok:
+        if r.status_code != requests.codes.ok: # pylint: disable=no-member
             print(self.refresh_url, r.text)
         r.raise_for_status()
         data = r.json()
@@ -151,22 +157,22 @@ class Server:
         self.spec_session.headers.update(self.access_header)
 
     def refresh_as_needed(self, response, *args, **kwargs):
-        if response.status_code == requests.codes.unauthorized and self.refresh_token:
+        if response.status_code == requests.codes.unauthorized and self.refresh_token: # pylint: disable=no-member
             self.refresh_tokens()
 
             request = response.request
             request.headers.update(self.access_header)
 
-            return self.session.send(request)
+            return self.session.send(request, *args, **kwargs)
 
     def refresh_as_needed_spec(self, response, *args, **kwargs):
-        if response.status_code == requests.codes.unauthorized and self.refresh_token:
+        if response.status_code == requests.codes.unauthorized and self.refresh_token: # pylint: disable=no-member
             self.refresh_tokens()
 
             request = response.request
             request.headers.update(self.access_header)
 
-            return self.spec_session.send(request)
+            return self.spec_session.send(request, *args, **kwargs)
 
     @response_json
     def get(self, resource, *args, **kwargs):
@@ -266,11 +272,13 @@ class ServerProxy (Server):
 
         super().__init__(api_key=api_key, api_server=api_server)
 
-    def getServer(prefix:str, api_server:str=None):
+    @classmethod
+    def get_server(cls, prefix: str, api_server:str=None):
         """
         Get ServerProxy object.
 
         Args:
+            cls (ServerProxy): ServerProxy class
             prefix (str): API key secrets common prefix name
             api_server (str,optional): API server URL. Defaults to None.
 
@@ -279,8 +287,8 @@ class ServerProxy (Server):
         """
 
         try:
-            from rndflow.job import secret
-        except:
+            from rndflow.job import secret # pylint: disable=import-outside-toplevel
+        except Exception:
             pass
 
         api_key= secret(f'{prefix}_token')
@@ -290,7 +298,7 @@ class ServerProxy (Server):
 
         return ServerProxy(api_key, project, input_node, output_node, api_server)
 
-    def getLastDataLayer(self)->int:
+    def get_last_datalayer(self)->int:
         """
         Get the ID of the last data layer available to the user.
         Returns:
@@ -299,7 +307,7 @@ class ServerProxy (Server):
         layer = self.get(f'/projects/{self.project}/data_layers/last')
         return layer['id']
 
-    def getDataLayers(self)->list:
+    def get_data_layers(self)->list:
         """
         Get available data layers.
         Returns:
@@ -310,7 +318,7 @@ class ServerProxy (Server):
         return layers
 
 
-    def postPackage(self, layer: int, label: str, fields: dict)->int:
+    def create_package_and_post(self, layer: int, label: str, fields: dict)->int:
         """
         Send package to input node of the project-server.
 
@@ -323,9 +331,9 @@ class ServerProxy (Server):
             int: package ID
         """
         package=dict(label=label,felds=fields)
-        return self.postPackage(layer, package)
+        return self.post_package(layer, package)
 
-    def postPackage(self, layer: int, package: dict)->int:
+    def post_package(self, layer: int, package: dict)->int:
         """
         Send package to input node of the project-server.
 
@@ -341,7 +349,7 @@ class ServerProxy (Server):
                 json=package)
         return p['id']
 
-    def searchByMaster(self, layer: int, master: int, page: int=1, page_size: int=1):
+    def search_by_master(self, layer: int, master: int, page: int=1, page_size: int=1):
         """
         Seach package in the output node of the project-server by the master package id.
 
@@ -364,7 +372,7 @@ class ServerProxy (Server):
             master_id=master
             ))
 
-    def waitResult(self, layer: int, master: int, timeout=timedelta(minutes=5), retry_pause:int=5, page: int=1, page_size: int=10)->list:
+    def wait_result(self, layer: int, master: int, timeout=timedelta(minutes=5), retry_pause:int=5, page: int=1, page_size: int=10)->list:
         """
 
         Wait for the results packages in the output node of the project-server.
@@ -383,12 +391,12 @@ class ServerProxy (Server):
         Returns:
             list: packages list, total packages count
         """
-        borderTime = datetime.now() + timeout
+        border_time = datetime.now() + timeout
 
         ready = False
-        while not ready and datetime.now() < borderTime:
-            results = self.searchByMaster(layer, master, page, page_size)
-            for result in results['items']:
+        while not ready and datetime.now() < border_time:
+            results = self.search_by_master(layer, master, page, page_size)
+            for r in results['items']: # pylint: disable=unused-variable
                 ready = True
                 break
             else:
@@ -399,7 +407,7 @@ class ServerProxy (Server):
 
         return results['items'], results['total']
 
-    def waitOneResult(self, layer: int, master: int, timeout=timedelta(minutes=5), retry_pause:int=5)->list:
+    def wait_one_result(self, layer: int, master: int, timeout=timedelta(minutes=5), retry_pause:int=5)->list:
         """
 
         Wait for the one result package in the output node of the project-server.
@@ -416,10 +424,10 @@ class ServerProxy (Server):
         Returns:
             list: package ID, package fields
         """
-        items, _ = self.waitResult(layer, master, timeout, retry_pause, 1, 1)
+        items, _ = self.wait_result(layer, master, timeout, retry_pause, 1, 1)
         return items[0]['id'], items[0]['fields']
 
-    def getFilesList(self, ident: int)->list:
+    def get_files_list(self, ident: int)->list:
         """
         Get files list of package
         Args:
@@ -430,7 +438,7 @@ class ServerProxy (Server):
         """
         return self.get(f'/projects/{self.project}/nodes/{self.output_node}/packages/{ident}/files')
 
-    def waitOneResultAndFiles(self, layer, master, timeout=timedelta(minutes=5), retry_pause:int=5)->list:
+    def wait_one_result_and_files(self, layer, master, timeout=timedelta(minutes=5), retry_pause:int=5)->list:
         """
         Wait for the one result package in the output node of the project-server.
 
@@ -446,6 +454,6 @@ class ServerProxy (Server):
         Returns:
             list: package ID, package fields list, package files list
         """
-        ident, fields = self.waitOneResult(layer, master, timeout, retry_pause)
-        files = self.getFilesList(ident)
+        ident, fields = self.wait_one_result(layer, master, timeout, retry_pause)
+        files = self.get_files_list(ident)
         return ident, fields, files

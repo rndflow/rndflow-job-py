@@ -1,16 +1,22 @@
+import json
+from pathlib import Path
+import h5py
+import pandas
 file_readers = {}
 
 #---------------------------------------------------------------------------
 def load_hdf5(path):
-    import h5py
+
     data = {}
 
     def load_dataset(name, obj):
-        if not isinstance(obj, h5py.Dataset): return
-        if name.startswith('_'): return
+        if not isinstance(obj, h5py.Dataset):
+            return
+        if name.startswith('_'):
+            return
 
         path = name.split('/')
-        dset = obj[()]   
+        dset = obj[()]
 
         if len(path) == 1:
             data[name] = dset
@@ -41,14 +47,11 @@ def load_hdf5(path):
     return data
 
 #---------------------------------------------------------------------------
-def load_json(path):
-    import json
-    from pathlib import Path
-    return json.loads(Path(path).read_text())
+def load_json(path, encoding='utf-8'):
+    return json.loads(Path(path).read_text(encoding=encoding))
 
 #---------------------------------------------------------------------------
 def load_csv(path):
-    import pandas
     return pandas.read_csv(path)
 
 #---------------------------------------------------------------------------

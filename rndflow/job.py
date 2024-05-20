@@ -1,12 +1,14 @@
 import os
 import json
 from pathlib import Path
+import h5py
+import numpy
 
 from .file_readers import file_readers
 
 root = Path('.').resolve()
-job_id = int(root.name)
-package_index = 0
+job_id = int(root.name)  # pylint: disable=invalid-name #(historical)
+package_index = 0        # pylint: disable=invalid-name #(historical)
 
 #---------------------------------------------------------------------------
 def secret(name, default=None):
@@ -42,7 +44,9 @@ class Package:
             return json.loads(path.read_text())
         return {}
 
-    def load(self, readers={}):
+    def load(self, readers=None):
+        if readers is None:
+            readers = {}
         data = self.fields
         readers = {**file_readers, **readers}
 
@@ -57,13 +61,11 @@ class Package:
 
 #---------------------------------------------------------------------------
 class NumpyEncoder(json.JSONEncoder):
-    def default(self, obj):
-        import numpy as np
+    def default(self, o):
+        if isinstance(o, numpy.generic):
+            return o.item()
 
-        if isinstance(obj, np.generic):
-            return obj.item()
-
-        return super(NumpyEncoder, self).default(obj)
+        return super().default(o)
 
 #---------------------------------------------------------------------------
 def params():
@@ -83,7 +85,10 @@ def files(*suffixes):
             yield f
 
 #---------------------------------------------------------------------------
-def load(readers={}):
+def load(readers=None):
+    if readers is None:
+        readers = {}
+
     data = params()
 
     for p in packages():
@@ -93,15 +98,19 @@ def load(readers={}):
 
 #---------------------------------------------------------------------------
 def save_hdf5(path, data):
-    import h5py
-    import numpy
-
     with h5py.File(path, 'w') as f:
         f.create_dataset(path.stem, data=data, track_times=False,
                 compression='gzip' if isinstance(data, numpy.ndarray) else None)
 
 #---------------------------------------------------------------------------
-def save_package(label=None, files={}, fields={}, images={}):
+def save_package(label=None, files=None, fields=None, images=None):
+    if files is None:
+        files = {}
+    if fields is None:
+        fields = {}
+    if images is None:
+        images = {}
+
     global package_index
 
     package_index += 1

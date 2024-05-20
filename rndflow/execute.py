@@ -3,16 +3,17 @@ import json
 import mimetypes
 import os
 import subprocess
-import sys
 import threading
 import time
 import traceback
 
-from binaryornot.check import is_binary
 from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
 from textwrap import dedent
+
+import argparse
+from binaryornot.check import is_binary
 
 from .server import Server, file_hash, timestamp, log_output_duplicate
 
@@ -20,6 +21,8 @@ class Job:
     HEARTBEAT_INTERVAL = timedelta(seconds=60)
 
     def __init__(self, host: str, job_id: int):
+        self.job = None
+        self.status = None
         self.job_id = job_id
         self.server = Server(host)
 
@@ -36,7 +39,8 @@ class Job:
 
     def log_tail(self):
         if self.log_file.is_file:
-            tail = ''.join(deque(open(self.log_file), 100))
+            with open(self.log_file, encoding="utf-8") as log_file:
+                tail = ''.join(deque(log_file, 100))
         else:
             tail = ''
 
@@ -52,12 +56,12 @@ class Job:
         chkpt = None
         while not self.done.is_set():
             time.sleep(0.5)
-            if chkpt is None or datetime.utcnow() >= chkpt:
+            if chkpt is None or datetime.now() >= chkpt:
                 send()
-                chkpt = datetime.utcnow() + self.HEARTBEAT_INTERVAL
+                chkpt = datetime.now() + self.HEARTBEAT_INTERVAL
 
     def download(self):
-        with open(self.log_file, 'at', buffering=1) as log_file:
+        with open(self.log_file, 'at', buffering=1, encoding="utf-8") as log_file:
             with contextlib.redirect_stdout(log_file):
                 self.job = self.server.get(f'/executor_api/jobs/{self.job_id}')
                 self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=self.log_tail()))
@@ -123,18 +127,18 @@ class Job:
             exit $rc
             """)
 
-        p = subprocess.run(script_wrapper, cwd=self.root, shell=True, executable="/bin/bash")
+        p = subprocess.run(script_wrapper, cwd=self.root, shell=True, executable="/bin/bash", check=False)
         self.status = p.returncode
 
     def upload(self):
-        with open(self.log_file, 'at', buffering=1) as log_file:
+        with open(self.log_file, 'at', buffering=1, encoding="utf-8") as log_file:
             with contextlib.redirect_stdout(log_file):
                 log_output_duplicate(f'[{timestamp()}] Uploading job output to server and S3 server...')
 
                 exclude_dirs = ('in', '__pycache__', '.ipynb_checkpoints')
                 def enumerate_files():
-                    for dir, dirs, files in os.walk(self.root):
-                        path = Path(dir)
+                    for directory, dirs, files in os.walk(self.root):
+                        path = Path(directory)
                         dirs[:] = [d for d in dirs
                             if (path / d).relative_to(self.root).parts[0] not in exclude_dirs]
                         for f in files:
@@ -154,7 +158,7 @@ class Job:
 
                     def upload_file_to_s3(link, path):
                         if link is not None:
-                            binary, file_type = get_binary_and_type(path)
+                            _, file_type = get_binary_and_type(path)
                             with open(path, 'rb') as f:
                                 self.server.raw_session.put(link, data=f, headers={
                                     'Content-Type': file_type,
@@ -227,29 +231,27 @@ class Job:
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
             self.upload()
-        except Exception as e:
+        except Exception:
             tr = traceback.format_exc()
             print(f'[{timestamp()}] {tr}')
-            conTries = 0
-            while conTries < 288 and not self.data_upload: # Try 2 days: 60 min * 24 hour * 2 days / 10 min = 288
+            con_tries = 0
+            while con_tries < 288 and not self.data_upload: # Try 2 days: 60 min * 24 hour * 2 days / 10 min = 288
                 try:
                     self.server.post(f'/executor_api/jobs/{self.job_id}/error', json=dict(
                         error='UploadError', message=tr))
                     break
-                except Exception as re:
+                except Exception:
                     tr = traceback.format_exc()
                     print(f'[{timestamp()}] {tr}')
                     print(f'[{timestamp()}] Can not transfer error information to server. Wait...')
                     time.sleep(600)
-                    conTries +=1
+                    con_tries +=1
         finally:
             self.done.set()
             self.beat.join()
 
 #---------------------------------------------------------------------------
 def main():
-    import argparse
-    from getpass import getpass
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--host', dest='host', required=True)
