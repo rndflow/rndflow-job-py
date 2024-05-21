@@ -237,7 +237,7 @@ class Job:
             tr = traceback.format_exc()
             self.logger.error('Upload error: %s', tr)
             con_tries = 0
-            while con_tries < 288 and not self.data_upload: # Try 2 days: 60 min * 24 hour * 2 days / 10 min = 288
+            while con_tries < 144 and not self.data_upload: # Try 24 hours: 60 min * 24 hour / 10 min = 144
                 try:
                     self.server.post(f'/executor_api/jobs/{self.job_id}/error', json=dict(
                         error='UploadError', message=tr))
