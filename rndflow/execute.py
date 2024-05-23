@@ -237,14 +237,14 @@ class Job:
             tr = traceback.format_exc()
             self.logger.error('Upload error: %s', tr)
             con_tries = 0
+            #If data was uploaded then ignore the error else try send info abotu error.
             while con_tries < 144 and not self.data_upload: # Try 24 hours: 60 min * 24 hour / 10 min = 144
                 try:
                     self.server.post(f'/executor_api/jobs/{self.job_id}/error', json=dict(
                         error='UploadError', message=tr))
                     break
-                except Exception:
-                    tr = traceback.format_exc()
-                    self.logger.error('Upload error: %s', tr)
+                except Exception as error:
+                    self.logger.error('Post error exception: %s', {str(error)})
                     self.logger.error('Can not transfer error information to server. Wait...')
                     time.sleep(600)
                     con_tries +=1
