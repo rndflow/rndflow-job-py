@@ -2,14 +2,13 @@ import json
 import mimetypes
 import os
 import subprocess
-import threading
 import time
 import traceback
 
 from collections import deque
-from datetime import datetime, timedelta
 from pathlib import Path
 from textwrap import dedent
+from threading import Event, Thread, Timer
 
 import argparse
 from binaryornot.check import is_binary
@@ -19,8 +18,16 @@ from .config import Settings
 
 from .logger import make_file_stdout_logger
 
+#---------------------------------------------------------------------------------------
+def timer_or_event(duration , event):
+    timer = Timer(duration, lambda: event.set())  # pylint: disable=unnecessary-lambda
+    timer.start()
+    event.wait()
+    timer.cancel()  # Stop the timer if job finished
+    event.clear()
+
+#---------------------------------------------------------------------------------------
 class Job:
-    HEARTBEAT_INTERVAL = timedelta(seconds=60)
 
     def __init__(self, host: str, job_id: int):
         self.job = None
@@ -37,9 +44,10 @@ class Job:
 
         self.data_upload = False
 
-        self.done = threading.Event()
-        self.beat = threading.Thread(target=self.heartbeat)
-        self.beat.start()
+        self.done = Event()
+        self.heartbeat_sleep = Event()
+        self.heartbeat_thread = Thread(target=self.heartbeat)
+        self.heartbeat_thread.start()
 
     def log_tail(self):
         if self.log_file.is_file:
@@ -50,24 +58,21 @@ class Job:
 
         return tail
 
-    def heartbeat(self):
-        def send():
-            try:
-                self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=self.log_tail()))
-            except Exception as e:
-                self.logger.error('Heartbeat exception: %s', e)
+    def heartbeat_send(self):
+        try:
+            self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=self.log_tail()))
+        except Exception as e:
+            self.logger.error('Heartbeat exception: %s', e)
 
-        chkpt = None
+    def heartbeat(self):
         while not self.done.is_set():
-            time.sleep(0.5)
-            if chkpt is None or datetime.now() >= chkpt:
-                send()
-                chkpt = datetime.now() + self.HEARTBEAT_INTERVAL
+            timer_or_event(self.cfg.heartbeat_interval, self.heartbeat_sleep)
+            self.heartbeat_send()
 
     def download(self):
 
         self.job = self.server.get(f'/executor_api/jobs/{self.job_id}')
-        self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=self.log_tail()))
+        self.heartbeat_send()
         job_files = self.server.get(f'/executor_api/jobs/{self.job_id}/files')
         job_packages = self.server.get(f'/executor_api/jobs/{self.job_id}/packages')
 
@@ -205,7 +210,7 @@ class Job:
         files = upload_files(enumerate_files())
 
         self.logger.info('Uploading info to the server for creating output packages...')
-        self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=self.log_tail()))
+        self.heartbeat_send()
 
         self.server.spec_put(f'/executor_api/jobs/{self.job_id}', json={
             'status': str(self.status),
@@ -215,15 +220,19 @@ class Job:
         self.data_upload = True
 
         self.logger.info('Jobs data uploading completed.')
-        self.server.post(f'/executor_api/jobs/{self.job_id}/heartbeat', json=dict(log_tail=self.log_tail()))
+        self.heartbeat_send()
+
+    def stop(self):
+        self.done.set()
+        self.heartbeat_sleep.set()
+        self.heartbeat_thread.join()
 
     def __enter__(self):
         try:
             self.download()
             return self
         except Exception as e:
-            self.done.set()
-            self.beat.join()
+            self.stop()
             tr = traceback.format_exc()
             self.logger.error('Download error: %s', tr)
             self.server.post(f'/executor_api/jobs/{self.job_id}/error', json=dict(
@@ -249,8 +258,7 @@ class Job:
                     time.sleep(600)
                     con_tries +=1
         finally:
-            self.done.set()
-            self.beat.join()
+            self.stop()
 
 #---------------------------------------------------------------------------
 def main():

@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     api_server: Optional[str] = None
     refresh_token: str
 
+    heartbeat_interval: int = 60
+
     ssl_verify: bool = True
 
     common_conn_retry_total: int = 5
