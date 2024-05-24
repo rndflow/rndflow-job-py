@@ -220,7 +220,7 @@ class Job:
         self.data_upload = True
 
         self.logger.info('Jobs data uploading completed.')
-        self.heartbeat_send()
+        # self.heartbeat_send() # This heartbeat will be ignored by the server since the job will be proceed.
 
     def stop(self):
         self.done.set()
