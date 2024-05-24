@@ -63,36 +63,36 @@ class Server:
         cfg = Settings()
 
         if api_server is None:
-            api_server = cfg.rndflow_api_server
+            api_server = cfg.api_server
             assert api_server, 'API server URL is not set'
 
         self.base_url = f'{api_server}/api'
 
         # https://findwork.dev/blog/advanced-usage-python-requests-timeouts-retries-hooks
         # https://www.peterbe.com/plog/best-practice-with-retries-with-requests
-        adapter = TimeoutHTTPAdapter(timeout=(cfg.rndflow_common_conn_timeout, cfg.rndflow_common_conn_read_timeout),
-            ssl_verify=cfg.rndflow_ssl_verify,
+        adapter = TimeoutHTTPAdapter(timeout=(cfg.common_conn_timeout, cfg.common_conn_read_timeout),
+            ssl_verify=cfg.ssl_verify,
             max_retries=Retry(
-                total=cfg.rndflow_common_conn_retry_total,
-                read=cfg.rndflow_common_conn_retry_read,
-                connect=cfg.rndflow_common_conn_retry_connect,
-                redirect=cfg.rndflow_common_conn_retry_redirect,
-                status=cfg.rndflow_common_conn_retry_status,
-                other=cfg.rndflow_common_conn_retry_other,
-                backoff_factor=cfg.rndflow_common_conn_retry_backoff_factor,
+                total=cfg.common_conn_retry_total,
+                read=cfg.common_conn_retry_read,
+                connect=cfg.common_conn_retry_connect,
+                redirect=cfg.common_conn_retry_redirect,
+                status=cfg.common_conn_retry_status,
+                other=cfg.common_conn_retry_other,
+                backoff_factor=cfg.common_conn_retry_backoff_factor,
                 status_forcelist=(502,504))
             )
 
-        adapter_spec = TimeoutHTTPAdapter(timeout=(cfg.rndflow_spec_conn_timeout, cfg.rndflow_spec_conn_read_timeout),
-            ssl_verify=cfg.rndflow_ssl_verify,
+        adapter_spec = TimeoutHTTPAdapter(timeout=(cfg.spec_conn_timeout, cfg.spec_conn_read_timeout),
+            ssl_verify=cfg.ssl_verify,
             max_retries=Retry(
-                total=cfg.rndflow_spec_conn_retry_total,
-                read=cfg.rndflow_spec_conn_retry_read,
-                connect=cfg.rndflow_spec_conn_retry_connect,
-                redirect=cfg.rndflow_spec_conn_retry_redirect,
-                status=cfg.rndflow_spec_conn_retry_status,
-                other=cfg.rndflow_spec_conn_retry_other,
-                backoff_factor=cfg.rndflow_spec_conn_retry_backoff_factor,
+                total=cfg.spec_conn_retry_total,
+                read=cfg.spec_conn_retry_read,
+                connect=cfg.spec_conn_retry_connect,
+                redirect=cfg.spec_conn_retry_redirect,
+                status=cfg.spec_conn_retry_status,
+                other=cfg.spec_conn_retry_other,
+                backoff_factor=cfg.spec_conn_retry_backoff_factor,
                 status_forcelist=(502,504))
             )
 
@@ -117,7 +117,7 @@ class Server:
             self.session.headers.update(self.access_header)
             self.spec_session.headers.update(self.access_header)
         else:
-            self.refresh_token = cfg.rndflow_refresh_token
+            self.refresh_token = cfg.refresh_token
             self.refresh_url = f'{self.base_url}/executor_api/auth/refresh'
             self.refresh_tokens()
 

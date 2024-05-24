@@ -126,7 +126,7 @@ class Job:
             fi
             (
             {script}
-            ) 2>&1 | ts "[{self.cfg.rndflow_dateformat}]" | tee -a {self.job_id}.log
+            ) 2>&1 | ts "[{self.cfg.dateformat}]" | tee -a {self.job_id}.log
             rc=${{PIPESTATUS[0]}}
             exit $rc
             """)
