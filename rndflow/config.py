@@ -3,7 +3,8 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    api_server: Optional[str] = None
+    api_server: Optional[str] = None         # Connect through Frontend server to API server
+    api_server_direct: Optional[str] = None  # Connect to API server
     refresh_token: str
 
     heartbeat_interval: int = 60
