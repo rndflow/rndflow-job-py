@@ -187,7 +187,7 @@ class Job:
                 upload_file_to_s3(link, path)
                 self.logger.info('Uploaded %s file to S3 server.', path)
 
-            log_link = self.server.post(f'/executor_api/jobs/{self.job_id}/upload_objects', json={ 'objects': [file_hash(self.log_file)]})
+            log_link = self.server.spec_post(f'/executor_api/jobs/{self.job_id}/upload_objects', json={ 'objects': [file_hash(self.log_file)]})
             upload_file_to_s3(log_link[0]['link'], self.log_file)
             p2h[self.log_file] = file_hash(self.log_file)
 

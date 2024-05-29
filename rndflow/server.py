@@ -189,6 +189,10 @@ class Server:
         return self.spec_session.put(f'{self.base_url}{resource}', *args, **kwargs)
 
     @response_json
+    def spec_post(self, resource, *args, **kwargs):
+        return self.spec_session.post(f'{self.base_url}{resource}', *args, **kwargs)
+
+    @response_json
     def delete(self, resource, *args, **kwargs):
         return self.session.delete(f'{self.base_url}{resource}', *args, **kwargs)
 
