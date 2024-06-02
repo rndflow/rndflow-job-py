@@ -88,7 +88,7 @@ class Server:
                 status=cfg.common_conn_retry_status,
                 other=cfg.common_conn_retry_other,
                 backoff_factor=cfg.common_conn_retry_backoff_factor,
-                status_forcelist=(502,504))
+                status_forcelist=(104,502,504))
             )
 
         adapter_spec = TimeoutHTTPAdapter(timeout=(cfg.spec_conn_timeout, cfg.spec_conn_read_timeout),
@@ -101,7 +101,7 @@ class Server:
                 status=cfg.spec_conn_retry_status,
                 other=cfg.spec_conn_retry_other,
                 backoff_factor=cfg.spec_conn_retry_backoff_factor,
-                status_forcelist=(502,504))
+                status_forcelist=(104,502,504))
             )
 
         self.session = requests.Session()
