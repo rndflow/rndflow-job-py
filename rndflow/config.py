@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # https://docs.python-requests.org/en/latest/user/advanced/#timeouts
     # https://docs.python-requests.org/en/latest/api/#requests.adapters.HTTPAdapter.send
     common_conn_timeout: Union[int, float] = 300
-    common_conn_read_timeout: Union[int, float] = 600
+    common_conn_read_timeout: Union[int, float] = 1200
 
     # https://findwork.dev/blog/advanced-usage-python-requests-timeouts-retries-hooks
     spec_conn_retry_total: int = 10

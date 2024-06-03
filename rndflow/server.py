@@ -22,11 +22,20 @@ from .logger import logger
 def response_json(fn):
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        r = fn(*args, **kwargs)
-        if r.status_code != requests.codes.ok: # pylint: disable=no-member
-            print(*args[1:], r.text)
-        r.raise_for_status()
-        return r.json()
+        count = 0
+        while True:
+            try:
+                r = fn(*args, **kwargs)
+                if r.status_code != requests.codes.ok: # pylint: disable=no-member
+                    print(*args[1:], r.text)
+                r.raise_for_status()
+                return r.json()
+            except ConnectionResetError as exc:
+                logger.error('ConnectionResetError in [%s]:', fn.__name__)
+                sleep(2.0)
+                count += 1
+                if count > 3:
+                    raise exc from exc
     return wrapper
 
 #---------------------------------------------------------------------------
