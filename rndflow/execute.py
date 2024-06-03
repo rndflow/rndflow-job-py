@@ -175,7 +175,7 @@ class Job:
             p2h = {Path(path) : file_hash(path) for path in paths}
 
             h2p = {h : p for p,h in p2h.items()}
-            links  = self.server.post(f'/executor_api/jobs/{self.job_id}/upload_objects',
+            links  = self.server.spec_post(f'/executor_api/jobs/{self.job_id}/upload_objects',
                     json={ 'objects': list(h2p.keys()) })
 
             self.logger.info('Uploading %s files to S3 server...', len(links))
