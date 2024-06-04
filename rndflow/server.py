@@ -10,6 +10,7 @@ import requests
 from binaryornot.check import is_binary
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
+from urllib3.exceptions import ProtocolError
 
 from .config import Settings
 from .logger import logger
@@ -30,8 +31,8 @@ def response_json(fn):
                     print(*args[1:], r.text)
                 r.raise_for_status()
                 return r.json()
-            except ConnectionResetError as exc:
-                logger.error('ConnectionResetError in [%s]:', fn.__name__)
+            except (ConnectionResetError, ProtocolError) as exc:
+                logger.error('Error [%s] in [%s]:', str(exc), fn.__name__)
                 sleep(2.0)
                 count += 1
                 if count > 3:
