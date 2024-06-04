@@ -31,7 +31,7 @@ def response_json(fn):
                     print(*args[1:], r.text)
                 r.raise_for_status()
                 return r.json()
-            except (ConnectionResetError, ProtocolError) as exc:
+            except (ConnectionResetError, ProtocolError, ConnectionError) as exc:
                 logger.error('Error [%s] in [%s]:', str(exc), fn.__name__)
                 sleep(2.0)
                 count += 1
