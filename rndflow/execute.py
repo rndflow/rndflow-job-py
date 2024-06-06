@@ -164,13 +164,17 @@ class Job:
                 return binary, file_type
 
             def upload_file_to_s3(link, path):
-                if link is not None:
-                    _, file_type = get_binary_and_type(path)
-                    with open(path, 'rb') as f:
-                        self.server.raw_session.put(link, data=f, headers={
-                            'Content-Type': file_type,
-                            'Content-Length': str(path.stat().st_size)
-                            }).raise_for_status()
+                if link is None:
+                    return False
+
+                _, file_type = get_binary_and_type(path)
+                with open(path, 'rb') as f:
+                    self.server.raw_session.put(link, data=f, headers={
+                        'Content-Type': file_type,
+                        'Content-Length': str(path.stat().st_size)
+                        }).raise_for_status()
+
+                return True
 
             p2h = {Path(path) : file_hash(path) for path in paths}
 
@@ -186,17 +190,19 @@ class Job:
                 path = h2p[item['object_id']]
                 link = item['link']
 
-                upload_file_to_s3(link, path)
-                self.logger.info('Uploaded %s file to S3 server.', path)
+                if upload_file_to_s3(link, path):
+                    self.logger.info('Uploaded %s file to S3 server.', path)
+                else:
+                    self.logger.info('Skipping uploading %s file to S3 server.', path)
 
             self.logger.info('All files uploaded to S3 server.')
 
             self.logger.info('Uploading log file to S3 server (get link and uploading)...')
-            log_link = self.server.post(f'/executor_api/jobs/{self.job_id}/upload_objects', json={ 'objects': [file_hash(self.log_file)]})
+            log_link = self.server.post(f'/executor_api/jobs/{self.job_id}/upload_objects', json={ 'objects': [file_hash(self.log_file)], 'check_exists': False })
             # Do not put any log output here! Log file size will be incorrect!
             upload_file_to_s3(log_link[0]['link'], self.log_file)
             p2h[self.log_file] = file_hash(self.log_file)
-
+            # Do not put any log output here! Log file size will be incorrect!
             files = []
             for path,h in p2h.items():
                 binary, file_type = get_binary_and_type(path)
