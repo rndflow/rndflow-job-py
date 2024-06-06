@@ -174,6 +174,8 @@ class Job:
 
             p2h = {Path(path) : file_hash(path) for path in paths}
 
+            self.logger.info('Get links for  uploading  %s files to S3 server...', len(p2h))
+
             h2p = {h : p for p,h in p2h.items()}
             links  = self.server.spec_post(f'/executor_api/jobs/{self.job_id}/upload_objects',
                     json={ 'objects': list(h2p.keys()) })
@@ -187,11 +189,13 @@ class Job:
                 upload_file_to_s3(link, path)
                 self.logger.info('Uploaded %s file to S3 server.', path)
 
+            self.logger.info('All files uploaded to S3 server.')
+
+            self.logger.info('Uploading log file to S3 server (get link and uploading)...')
             log_link = self.server.post(f'/executor_api/jobs/{self.job_id}/upload_objects', json={ 'objects': [file_hash(self.log_file)]})
+            # Do not put any log output here! Log file size will be incorrect!
             upload_file_to_s3(log_link[0]['link'], self.log_file)
             p2h[self.log_file] = file_hash(self.log_file)
-
-            # Do not put any log output here! Log file size will be incorrect!
 
             files = []
             for path,h in p2h.items():
