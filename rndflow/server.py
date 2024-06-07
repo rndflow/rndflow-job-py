@@ -75,14 +75,14 @@ class Server:
         if cfg.api_server_direct is not None:
             api_server = cfg.api_server_direct
             self.base_url = f'{api_server}'
-            logger.info('Using direct API server %s (from config)', api_server)
+            logger.debug('Using direct API server %s (from config)', api_server)
         elif api_server is not None:
             self.base_url = f'{api_server}/api'
-            logger.info('Using API server through %s', api_server)
+            logger.debug('Using API server through %s', api_server)
         elif cfg.api_server is not None:
             api_server = cfg.api_server
             self.base_url = f'{api_server}/api'
-            logger.info('Using API server through %s (from config)', api_server)
+            logger.debug('Using API server through %s (from config)', api_server)
         else:
             raise Exception('No API server specified')
 
