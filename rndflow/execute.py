@@ -18,6 +18,13 @@ from .config import Settings
 
 from .logger import make_file_stdout_logger
 
+
+#---------------------------------------------------------------------------------------
+class PossibleNetworkError(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
+
 #---------------------------------------------------------------------------------------
 def timer_or_event(duration , event):
     timer = Timer(duration, lambda: event.set())  # pylint: disable=unnecessary-lambda
@@ -101,7 +108,10 @@ class Job:
 
         self.logger.info('Job inputs data downloaded.')
 
-        self.server.post(f'/executor_api/jobs/{self.job_id}/status', json=dict(status='downloaded'))
+        try:
+            self.server.post(f'/executor_api/jobs/{self.job_id}/status', json=dict(status='downloaded'))
+        except Exception as e:
+            raise PossibleNetworkError(f"Could not send 'Downloaded' status to server: {str(e)}") from None
 
     def execute(self):
         env = os.environ.copy()
@@ -168,11 +178,14 @@ class Job:
                     return False
 
                 _, file_type = get_binary_and_type(path)
-                with open(path, 'rb') as f:
-                    self.server.raw_session.put(link, data=f, headers={
-                        'Content-Type': file_type,
-                        'Content-Length': str(path.stat().st_size)
-                        }).raise_for_status()
+                try:
+                    with open(path, 'rb') as f:
+                        self.server.raw_session.put(link, data=f, headers={
+                            'Content-Type': file_type,
+                            'Content-Length': str(path.stat().st_size)
+                            }).raise_for_status()
+                except Exception as e:
+                    raise PossibleNetworkError(f"Could not upload file [{path}] to server: {str(e)}") from None
 
                 return True
 
@@ -181,8 +194,11 @@ class Job:
             self.logger.info('Get links for  uploading  %s files to S3 server...', len(p2h))
 
             h2p = {h : p for p,h in p2h.items()}
-            links  = self.server.spec_post(f'/executor_api/jobs/{self.job_id}/upload_objects',
+            try:
+                links  = self.server.spec_post(f'/executor_api/jobs/{self.job_id}/upload_objects',
                     json={ 'objects': list(h2p.keys()) })
+            except Exception as e:
+                raise PossibleNetworkError(f"Could not get links for uploading data to S3 server: {str(e)}") from None
 
             self.logger.info('Uploading %s files to S3 server...', len(links))
 
@@ -198,7 +214,11 @@ class Job:
             self.logger.info('All files uploaded to S3 server.')
 
             self.logger.info('Uploading log file to S3 server (get link and uploading)...')
-            log_link = self.server.post(f'/executor_api/jobs/{self.job_id}/upload_objects', json={ 'objects': [file_hash(self.log_file)], 'check_exists': False })
+
+            try:
+                log_link = self.server.post(f'/executor_api/jobs/{self.job_id}/upload_objects', json={ 'objects': [file_hash(self.log_file)], 'check_exists': False })
+            except Exception as e:
+                raise PossibleNetworkError(f"Could not get link for uploading log to S3 server : {str(e)}") from None
             # Do not put any log output here! Log file size will be incorrect!
             upload_file_to_s3(log_link[0]['link'], self.log_file)
             p2h[self.log_file] = file_hash(self.log_file)
@@ -222,10 +242,13 @@ class Job:
         self.logger.info('Uploading info to the server for creating output packages...')
         self.heartbeat_send()
 
-        self.server.spec_put(f'/executor_api/jobs/{self.job_id}', json={
-            'status': str(self.status),
-            'files': files
-            })
+        try:
+            self.server.spec_put(f'/executor_api/jobs/{self.job_id}', json={
+                'status': str(self.status),
+                'files': files
+                })
+        except Exception as e:
+            raise PossibleNetworkError(f"Could not send job info to server: {str(e)}") from None
 
         self.data_upload = True
 
@@ -243,24 +266,24 @@ class Job:
             return self
         except Exception as e:
             self.stop()
-            tr = traceback.format_exc()
-            self.logger.error('Download error: %s', tr)
+            message = e.message if isinstance(e, PossibleNetworkError) else traceback.format_exc()
+            self.logger.error('Download error: %s', message)
             self.server.post(f'/executor_api/jobs/{self.job_id}/error', json=dict(
-                        error='DownloadError', message=tr))
+                        error='DownloadError', message=message))
             raise e
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
             self.upload()
-        except Exception:
-            tr = traceback.format_exc()
-            self.logger.error('Upload error: %s', tr)
+        except Exception as e:
+            message = e.message if isinstance(e, PossibleNetworkError) else traceback.format_exc()
+            self.logger.error('Upload error: %s', message)
             con_tries = 0
             #If data was uploaded then ignore the error else try send info abotu error.
             while con_tries < 144 and not self.data_upload: # Try 24 hours: 60 min * 24 hour / 10 min = 144
                 try:
                     self.server.post(f'/executor_api/jobs/{self.job_id}/error', json=dict(
-                        error='UploadError', message=tr))
+                        error='UploadError', message=message))
                     break
                 except Exception as error:
                     self.logger.error('Post error exception: %s', {str(error)})
