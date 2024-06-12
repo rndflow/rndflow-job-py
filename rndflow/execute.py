@@ -13,17 +13,10 @@ from threading import Event, Thread, Timer
 import argparse
 from binaryornot.check import is_binary
 
-from .server import Server, file_hash
+from .server import Server, file_hash, PossibleNetworkError
 from .config import Settings
 
 from .logger import make_file_stdout_logger
-
-
-#---------------------------------------------------------------------------------------
-class PossibleNetworkError(Exception):
-    def __init__(self, message):
-        self.message = message
-        super().__init__(self.message)
 
 #---------------------------------------------------------------------------------------
 def timer_or_event(duration , event):

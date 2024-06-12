@@ -19,6 +19,12 @@ from .logger import logger
 #urllib3.disable_warnings()
 #ssl._create_default_https_context = ssl._create_unverified_context
 
+#---------------------------------------------------------------------------------------
+class PossibleNetworkError(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
+
 #---------------------------------------------------------------------------
 def response_json(fn):
     @functools.wraps(fn)
@@ -216,8 +222,11 @@ class Server:
         ntries = 2
 
         while True:
-            r = self.raw_session.get(file['content'], stream=True)
-            r.raise_for_status()
+            try:
+                r = self.raw_session.get(file['content'], stream=True)
+                r.raise_for_status()
+            except Exception as e:
+               raise PossibleNetworkError(f"Could not download file {file['name']}: {str(e)}") from None
 
             h = hashlib.sha256()
             with open(path, 'wb') as f:
@@ -233,7 +242,7 @@ class Server:
             if ntries > 0:
                 logger.info('%s: wrong content checksum. retrying...', path)
             else:
-                raise Exception(f'{path}: wrong content checksum.')
+                raise PossibleNetworkError(f'{path}: wrong content checksum.')
 
         if file['is_executable']:
             os.chmod(path, 0o770)
